@@ -1,0 +1,260 @@
+---
+title: "Doublethink deep processing interventions - Study 5"
+author: "Petar and Marija"
+output: 
+  html_document:
+    toc: true
+    toc_float: 
+      collapsed: false
+    toc_depth: 5
+    code_folding: hide
+    theme: simplex
+    highlight: tango
+    df_print: kable
+date: "`r Sys.Date()`"
+---
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning= FALSE, message = FALSE)
+```
+
+```{r load packages, include=FALSE}
+library(haven) 
+library(car) 
+library(Hmisc) 
+library(psych) 
+library(dplyr)
+library(epiDisplay)
+library(data.table)
+library(readr)
+library(rstatix)
+library(tidyr)
+
+options(scipen=999)
+```
+
+```{r import, include=FALSE}
+dblthnk_data <- fread('https://www.soscisurvey.de/tliac/?act=2ytygb4S07NBvZNrqqqacJsz&vQuality')
+```
+
+```{r save raw data, include=FALSE}
+
+write_sav(dblthnk_data, "study5_data_raw.sav")
+write.csv(dblthnk_data, "study5_data_raw.csv")
+
+
+```
+
+
+### Data overview
+
+```{r data overview}
+
+tab1(dblthnk_data$RN01)
+
+```
+
+
+### Remove RSI > 2 as per preregistration
+
+```{r RSI}
+time_model <- aov(TIME_SUM ~ as.factor(RN01), data = dblthnk_data)
+summary(time_model)
+
+TukeyHSD(time_model)
+
+
+dblthnk_data_rsi <- dblthnk_data %>%
+  group_by(RN01) %>% 
+  mutate(
+    median_time = median(TIME_SUM, na.rm = TRUE),
+    RSI = median_time / TIME_SUM,
+    exclude_RSI = RSI > 2
+  ) %>%
+  ungroup()
+
+dblthnk_data<- dblthnk_data_rsi %>% 
+  filter(!exclude_RSI)
+
+write_sav(dblthnk_data, "study5_data_filtered.sav")
+write.csv(dblthnk_data, "study5_data_filtered.csv")
+
+
+tab1(dblthnk_data$RN01)
+
+```
+
+```{r renaming, include=FALSE}
+
+names(dblthnk_data)[names(dblthnk_data) == "DA09_09"] <- "DA09_01"
+names(dblthnk_data)[names(dblthnk_data) == "DC09_09"] <- "DC09_01"
+names(dblthnk_data)[names(dblthnk_data) == "DB08_08"] <- "DB08_01"
+names(dblthnk_data)[names(dblthnk_data) == "DD08_08"] <- "DD08_01"
+
+# Helper: safely extract a column (returns all NA if missing)
+get_col <- function(df, nm) {
+  if (nm %in% names(df)) df[[nm]] else rep(NA, nrow(df))
+}
+
+for (i in 1:11) {
+  # ---- OLD variable names (per item i) ----
+  # Block A (Exp 1 & Exp 2)
+  da <- paste0("DA", sprintf("%02d", i), "_01")  # e.g., "DA01_01"
+  dc <- paste0("DC", sprintf("%02d", i), "_01")  # e.g., "DC01_01"
+  
+  # Block B (Exp 1 & Exp 2)
+  db <- paste0("DB", sprintf("%02d", i), "_01")  # e.g., "DB01_01"
+  dd <- paste0("DD", sprintf("%02d", i), "_01")  # e.g., "DD01_01"
+  
+  # ---- NEW variable names ----
+  dt1 <- paste0("DT01_", sprintf("%02d", i))     # e.g., "DT01_01"
+  dt2 <- paste0("DT02_", sprintf("%02d", i))     # e.g., "DT02_01"
+  
+  # ---- Create unified DT variables ----
+  # BLOCK A → DT01 (take DA if present, else DC)
+  dblthnk_data[[dt1]] <- dplyr::coalesce(
+    get_col(dblthnk_data, da),
+    get_col(dblthnk_data, dc)
+  )
+  
+  # BLOCK B → DT02 (take DB if present, else DD)
+  dblthnk_data[[dt2]] <- dplyr::coalesce(
+    get_col(dblthnk_data, db),
+    get_col(dblthnk_data, dd)
+  )
+}
+
+
+```
+
+```{r dblthnk calculations, include=FALSE}
+
+# vector of item names
+items1 <- paste0("DT01_", sprintf("%02d", 1:11))
+items2 <- paste0("DT02_", sprintf("%02d", 1:11))
+
+# for each pair: 1 if both items >= 3, else 0
+par_mat <- (dblthnk_data[items1] >= 3 & dblthnk_data[items2] >= 3) * 1L
+colnames(par_mat) <- paste0("dt_par", 1:11)
+
+# add to dataset
+dblthnk_data <- cbind(dblthnk_data, par_mat)
+
+# doublethink sum score
+dblthnk_data$doublethink <- rowSums(par_mat, na.rm = TRUE)
+
+describe(dblthnk_data$doublethink)
+
+
+```
+
+```{r REI, include=FALSE}
+
+dblthnk_data <-
+  dblthnk_data %>% mutate(
+    rei_r1_re = Recode(
+      dblthnk_data$rei_r1, "1 = 5; 2 = 4; 3 = 3; 4 = 2; 5 = 1"
+    ),
+    rei_e1_re = Recode(
+      dblthnk_data$rei_e1, "1 = 5; 2 = 4; 3 = 3; 4 = 2; 5 = 1"
+    ),
+    rei_e4_re = Recode(
+      dblthnk_data$rei_e4, "1 = 5; 2 = 4; 3 = 3; 4 = 2; 5 = 1"
+    ))
+
+dblthnk_data <-
+  dblthnk_data %>% mutate(REI_rational = rowMeans(subset(
+    dblthnk_data, select = c(rei_r1_re, rei_r2:rei_r4)
+  )))
+
+dblthnk_data <-
+  dblthnk_data %>% mutate(REI_exp = rowMeans(subset(
+    dblthnk_data,
+    select = c(rei_e1_re, rei_e2:rei_e3, rei_e4_re)
+  )))
+
+
+```
+
+```{r rename factor, include=FALSE}
+
+dblthnk_data$group <- factor(
+  dblthnk_data$RN01,
+  levels = c(1, 2),
+  labels = c("control", "exp")
+)
+
+```
+
+
+```{r final dataset, include=FALSE}
+
+write_sav(dblthnk_data, "study5_data_final.sav")
+write.csv(dblthnk_data, "study5_data_final.csv",  fileEncoding = "UTF-8")
+
+```
+
+### Descriptives
+
+```{r descriptives}
+
+descriptives <- dblthnk_data %>%
+  group_by(group) %>%
+  summarise(
+    `Mean age` = sprintf("%.2f", mean(SD02_01, na.rm = TRUE)),
+    `Female` = sprintf("%d (%.1f%%)",
+                       sum(SD01 == 1, na.rm = TRUE),
+                       mean(SD01 == 1, na.rm = TRUE) * 100),
+    `Male` = sprintf("%d (%.1f%%)",
+                     sum(SD01 == 2, na.rm = TRUE),
+                     mean(SD01 == 2, na.rm = TRUE) * 100),
+    `Other` = sprintf("%d (%.1f%%)",
+                      sum(SD01 == 3, na.rm = TRUE),
+                      mean(SD01 == 3, na.rm = TRUE) * 100),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(
+    cols = -group,
+    names_to = "Variable",
+    values_to = "Value"
+  ) %>%
+  pivot_wider(
+    names_from = group,
+    values_from = Value
+  ) %>%
+  mutate(Variable = factor(
+    Variable,
+    levels = c("Mean age", "Female", "Male", "Other")
+  )) %>%
+  arrange(Variable)
+
+descriptives
+
+dblthnk_data %>%
+  group_by(group) %>%
+  summarise(
+    mean_doublethink = mean(doublethink, na.rm = TRUE),
+    sd_doublethink   = sd(doublethink, na.rm = TRUE),
+    n                = sum(!is.na(doublethink))
+  )
+
+
+
+```
+
+### Hypothesis testing
+
+```{r ANALYSIS}
+
+t_exp <- t.test(doublethink ~ group, 
+                 data = dblthnk_data,
+                 var.equal = TRUE,
+                alternative = "greater")
+
+t_exp
+
+cohens_d(
+  doublethink ~ group,
+  data = dblthnk_data) 
+
+```
