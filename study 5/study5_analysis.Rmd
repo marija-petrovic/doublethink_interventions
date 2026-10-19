@@ -1,6 +1,6 @@
 ---
 title: "Doublethink deep processing interventions - Study 5"
-author: "Petar and Marija"
+author: "Anonymized for peer review"
 output: 
   html_document:
     toc: true
