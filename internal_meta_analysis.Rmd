@@ -1,0 +1,175 @@
+---
+title: "Internal meta analysis - doublethink interventions"
+author: "Anonymous for peer review"
+output: 
+  html_document:
+    toc: true
+    toc_float: 
+      collapsed: false
+    toc_depth: 5
+    code_folding: hide
+    theme: simplex
+    highlight: tango
+    df_print: kable
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning= FALSE, message = FALSE)
+```
+
+```{r packages}
+library(metafor)
+library(dplyr)
+```
+
+```{r create dataset}
+meta_data <- data.frame(
+  study = c(
+    "Study 1 - Generation",
+    "Study 2 - Generation",
+    "Study 3 - Generation",
+    "Study 1 - Explanation",
+    "Study 4 - Explanation",
+    "Study 5 - Explanation"
+  ),
+  
+  intervention = c(
+    "Generation",
+    "Generation",
+    "Generation",
+    "Explanation",
+    "Explanation",
+    "Explanation"
+  ),
+  
+  d = c(
+    0.2762668,   # Study 1 Generation
+    0.2037341,   # Study 2 Generation
+    0.0670939,   # Study 3 Generation
+    
+    0.3862670,   # Study 1 Explanation
+    0.2076115,   # Study 4 Explanation
+    0.0599345    # Study 5 Explanation
+  ),
+  
+  n_control = c(
+    105,
+    166,
+    258,
+    105,
+    146,
+    263
+  ),
+  
+  n_exp = c(
+    105,
+    165,
+    257,
+    114,
+    137,
+    252
+  )
+)
+
+meta_data
+```
+```{r convert to hedge and sampling variance}
+meta_data <- meta_data %>%
+  mutate(
+    df = n_control + n_exp - 2,
+    
+    # small-sample correction
+    J = 1 - (3 / (4 * df - 1)),
+    
+    # Hedges' g
+    g = J * d,
+    
+    # sampling variance of Cohen's d
+    var_d = (n_control + n_exp) / (n_control * n_exp) +
+      (d^2 / (2 * df)),
+    
+    # sampling variance of Hedges' g
+    var_g = J^2 * var_d,
+    
+    se_g = sqrt(var_g)
+  )
+
+meta_data
+```
+
+```{r meta generation}
+meta_generation <- rma(
+  yi = g,
+  vi = var_g,
+  data = meta_data %>% filter(intervention == "Generation"),
+  method = "REML"
+)
+
+meta_generation
+
+
+forest(
+  meta_generation,
+  slab = meta_data$study[meta_data$intervention == "Generation"],
+  xlab = "Hedges' g",
+  refline = 0
+)
+```
+```{r meta explanation}
+
+meta_explanation <- rma(
+  yi = g,
+  vi = var_g,
+  data = meta_data %>% filter(intervention == "Explanation"),
+  method = "REML"
+)
+
+meta_explanation
+
+forest(
+  meta_explanation,
+  slab = meta_data$study[meta_data$intervention == "Explanation"],
+  xlab = "Hedges' g",
+  refline = 0
+)
+
+writexl::write_xlsx(meta_data, "metanalysis_data.xlsx")
+
+```
+
+```{r meta moderator}
+
+meta_moderator <- rma(
+  yi = g,
+  vi = var_g,
+  mods = ~ intervention,
+  data = meta_data,
+  method = "REML"
+)
+
+meta_moderator
+
+```
+
+```{r}
+meta_generation_fixed <- rma(
+  yi = g,
+  vi = var_g,
+  data = meta_data %>% filter(intervention == "Generation"),
+  method = "FE"
+)
+
+meta_explanation_fixed <- rma(
+  yi = g,
+  vi = var_g,
+  data = meta_data %>% filter(intervention == "Explanation"),
+  method = "FE"
+)
+
+meta_generation_fixed
+meta_explanation_fixed
+```
+
+
+
